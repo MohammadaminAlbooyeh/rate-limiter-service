@@ -85,6 +85,16 @@ class AlertResponse(BaseModel):
     threshold: str
 
 
+class SimulateRequest(CheckRequest):
+    rule: RuleCreate
+
+
+class SimulateResponse(BaseModel):
+    allowed: bool
+    remaining: int
+    reset: int
+
+
 class TimelinePoint(BaseModel):
     time: str
     total: int

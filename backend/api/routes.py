@@ -20,6 +20,38 @@ analytics_service = AnalyticsService()
 alert_service = AlertService()
 
 
+@router.post("/simulate", response_model=SimulateResponse)
+async def simulate_rate_limit(req: SimulateRequest):
+    identity = {
+        "ip": req.ip,
+        "api_key": req.api_key,
+        "user_id": req.user_id,
+        "endpoint": req.endpoint,
+        "method": req.method,
+    }
+    
+    # Use temporary store for simulation
+    from backend.storage.memory_store import MemoryStore
+    temp_store = MemoryStore()
+    from backend.services.limiter_service import LimiterService
+    temp_limiter = LimiterService(store=temp_store)
+    
+    # Create temporary rule from request
+    rule = req.rule.to_model()
+    
+    # Simulate rate limit check
+    allowed, remaining, reset = await temp_limiter.check(identity, rule)
+    
+    # Clean up temporary limiter
+    await temp_limiter.close()
+    
+    return {
+        "allowed": allowed,
+        "remaining": remaining,
+        "reset": reset
+    }
+
+
 @router.post("/check")
 async def check_rate_limit(req: CheckRequest):
     identity = {
