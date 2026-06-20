@@ -3,6 +3,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from backend.middleware.identity_extractor import extract_identity
 from backend.middleware.rule_matcher import match_rule
+from backend.middleware.response_handler import rate_limit_response
 from backend.services.limiter_service import LimiterService
 from backend.utils.metrics import REQUEST_COUNT, LATENCY
 import time
@@ -11,11 +12,14 @@ import logging
 logger = logging.getLogger("ratelimiter.middleware")
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, limiter: LimiterService):
+    def __init__(self, app, limiter: LimiterService, exclude_paths: set = None):
         super().__init__(app)
         self.limiter = limiter
+        self.exclude_paths = exclude_paths or set()
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.url.path in self.exclude_paths:
+            return await call_next(request)
         try:
             identity = await extract_identity(request)
         except Exception as e:
@@ -128,10 +132,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             logger.error(f"RateLimiter check/logging failed (FAIL-OPEN): {e}")
             return await call_next(request)
 
-        response = await call_next(request) if allowed else Response(
-            status_code=429,
-            content="Too Many Requests",
-        )
+        response = await call_next(request) if allowed else rate_limit_response(reset, rule.limit, str(rule.window), rule.algorithm)
 
         response.headers["X-RateLimit-Limit"] = str(rule.limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)

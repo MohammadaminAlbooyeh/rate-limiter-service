@@ -16,6 +16,21 @@ class AnalyticsService:
             session.add(log_entry)
             await session.commit()
 
+            try:
+                from backend.utils.ws_manager import manager
+                await manager.broadcast({
+                    "type": "log",
+                    "data": {
+                        "identity": identity,
+                        "endpoint": endpoint,
+                        "method": method,
+                        "allowed": allowed,
+                        "timestamp": log_entry.timestamp.isoformat()
+                    }
+                })
+            except Exception:
+                pass
+
     async def get_usage(self, identity: str) -> Dict:
         async with async_session() as session:
             query = select(
@@ -71,3 +86,23 @@ class AnalyticsService:
             )
             rows = result.all()
             return [{"identity": row[0], "total_requests": row[1]} for row in rows]
+
+    async def get_timeline(self, minutes: int = 30) -> List[Dict]:
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        async with async_session() as session:
+            result = await session.execute(
+                select(
+                    func.strftime("%Y-%m-%d %H:%M", RequestLogDB.timestamp).label("minute"),
+                    func.count(RequestLogDB.id).label("total"),
+                    func.sum(func.cast(RequestLogDB.allowed == False, func.Integer)).label("blocked"),
+                )
+                .where(RequestLogDB.timestamp >= cutoff)
+                .group_by("minute")
+                .order_by("minute")
+            )
+            rows = result.all()
+            return [
+                {"time": row[0], "total": row[1], "blocked": row[2] if row[2] else 0}
+                for row in rows
+            ]

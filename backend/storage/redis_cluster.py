@@ -1,3 +1,5 @@
+import json
+from typing import Optional
 from redis.cluster import RedisCluster as RedisClusterClient
 from backend.storage.base_store import BaseStore
 
@@ -35,10 +37,25 @@ class RedisClusterStore(BaseStore):
     async def get_bucket(self, key: str) -> Optional[dict]:
         val = await self.client.get(key)
         if val:
-            data = json.loads(val)
-            return {"tokens": data["tokens"], "last_refill": data["last_refill"]}
+            try:
+                data = json.loads(val)
+                return {"tokens": data["tokens"], "last_refill": data["last_refill"]}
+            except (json.JSONDecodeError, KeyError):
+                return None
         return None
 
     async def set_bucket(self, key: str, tokens: float, timestamp: float) -> None:
         data = json.dumps({"tokens": tokens, "last_refill": timestamp})
         await self.client.set(key, data)
+
+    async def delete(self, key: str) -> None:
+        await self.client.delete(key)
+
+    async def delete_by_pattern(self, pattern: str) -> None:
+        cursor = 0
+        while True:
+            cursor, keys = await self.client.scan(cursor=cursor, match=pattern)
+            if keys:
+                await self.client.delete(*keys)
+            if cursor == 0:
+                break

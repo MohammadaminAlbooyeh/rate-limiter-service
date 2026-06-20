@@ -8,18 +8,16 @@ function App() {
   const [rules, setRules] = useState([]);
   const [blockedLogs, setBlockedLogs] = useState([]);
   const [topConsumers, setTopConsumers] = useState([]);
-  
-  // Whitelist/Blacklist lists
+  const [timeline, setTimeline] = useState([]);
+
   const [whitelist, setWhitelist] = useState([]);
   const [blacklist, setBlacklist] = useState([]);
-  
-  // Forms
+
   const [ruleForm, setRuleForm] = useState({ name: '', algorithm: 'fixed_window', limit: 100, window: 60, endpoint: '*', identity: 'ip' });
   const [listForm, setListForm] = useState({ identity: '', reason: '', type: 'whitelist' });
-  const [simForm, setSimForm] = useState({ identity: 'test_user', endpoint: '/home', method: 'GET' });
+  const [simForm, setSimForm] = useState({ ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET' });
   const [simResult, setSimResult] = useState(null);
 
-  // Poll usage statistics and logs
   const fetchData = async () => {
     try {
       const statsRes = await fetch('/api/v1/analytics/usage?identity=all');
@@ -37,6 +35,10 @@ function App() {
       const topRes = await fetch('/api/v1/analytics/top?limit=10');
       const topData = await topRes.json();
       setTopConsumers(topData);
+
+      const timelineRes = await fetch('/api/v1/analytics/timeline?minutes=30');
+      const timelineData = await timelineRes.json();
+      setTimeline(timelineData);
     } catch (e) {
       console.error("Failed to fetch dashboard data", e);
     }
@@ -44,8 +46,44 @@ function App() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 4000);
-    return () => clearInterval(interval);
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.hostname;
+    const wsPort = window.location.port === '3000' ? '8000' : window.location.port;
+    const wsUrl = `${wsProto}//${wsHost}${wsPort ? `:${wsPort}` : ''}/ws/analytics`;
+
+    const ws = new WebSocket(wsUrl);
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'log') {
+        const log = msg.data;
+        setStats(prev => {
+          const total = (prev.total_requests || 0) + 1;
+          const allowed = (prev.allowed_requests || 0) + (log.allowed ? 1 : 0);
+          const blocked = (prev.blocked_requests || 0) + (log.allowed ? 0 : 1);
+          return { total_requests: total, allowed_requests: allowed, blocked_requests: blocked };
+        });
+        if (!log.allowed) {
+          setBlockedLogs(prev => [log, ...prev.slice(0, 49)]);
+        }
+        setTopConsumers(prev => {
+          const exists = prev.find(c => c.identity === log.identity);
+          if (exists) {
+            return prev.map(c => c.identity === log.identity ? { ...c, total_requests: c.total_requests + 1 } : c)
+              .sort((a, b) => b.total_requests - a.total_requests);
+          } else {
+            return [...prev, { identity: log.identity, total_requests: 1 }]
+              .sort((a, b) => b.total_requests - a.total_requests)
+              .slice(0, 10);
+          }
+        });
+      }
+    };
+
+    const interval = setInterval(fetchData, 10000);
+    return () => {
+      ws.close();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleCreateRule = async (e) => {
@@ -99,30 +137,31 @@ function App() {
   const handleSimulateRequest = async (e) => {
     e.preventDefault();
     try {
-      // Build identity payload for endpoint check
       const payload = {
         endpoint: simForm.endpoint,
         method: simForm.method,
-        ip: simForm.identity,
-        api_key: simForm.identity,
-        user_id: simForm.identity
+        ip: simForm.ip,
+        api_key: simForm.api_key,
+        user_id: simForm.user_id,
       };
-      
+
       const res = await fetch('/api/v1/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       const status = res.status;
       const data = await res.json();
-      
+
       setSimResult({
         status,
         allowed: status !== 429 && status !== 403,
         detail: data.detail || 'Success',
+        limit: res.headers.get('X-RateLimit-Limit'),
         remaining: res.headers.get('X-RateLimit-Remaining'),
-        reset: res.headers.get('Retry-After')
+        reset: res.headers.get('X-RateLimit-Reset'),
+        algorithm: res.headers.get('X-RateLimit-Algorithm'),
       });
       fetchData();
     } catch (err) {
@@ -134,17 +173,17 @@ function App() {
     <div className="app-container">
       <div className="sidebar">
         <div className="sidebar-brand">
-          🛡️ RateLimiter.io
+          RateLimiter.io
         </div>
         <ul className="nav-links">
           <li className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-            📊 Dashboard
+            Dashboard
           </li>
           <li className={`nav-item ${activeTab === 'rules' ? 'active' : ''}`} onClick={() => setActiveTab('rules')}>
-            ⚙️ Limits & Rules
+            Rules
           </li>
           <li className={`nav-item ${activeTab === 'lists' ? 'active' : ''}`} onClick={() => setActiveTab('lists')}>
-            🚫 Whitelist / Blacklist
+            Whitelist / Blacklist
           </li>
         </ul>
       </div>
@@ -172,13 +211,26 @@ function App() {
               </div>
             </div>
 
+            <div className="card">
+              <h3 className="card-title">Request Timeline (Last 30 min)</h3>
+              <RequestChart data={timeline} />
+            </div>
+
             <div className="grid-3" style={{ gridTemplateColumns: '2fr 1fr' }}>
               <div className="card">
                 <h3 className="card-title">Live Simulator Tool</h3>
                 <form onSubmit={handleSimulateRequest} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Client Identity Value (IP/API Key/User ID)</label>
-                    <input className="form-control" type="text" value={simForm.identity} onChange={e => setSimForm({ ...simForm, identity: e.target.value })} required />
+                    <label className="form-label">Client IP</label>
+                    <input className="form-control" type="text" value={simForm.ip} onChange={e => setSimForm({ ...simForm, ip: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">API Key</label>
+                    <input className="form-control" type="text" value={simForm.api_key} onChange={e => setSimForm({ ...simForm, api_key: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">User ID</label>
+                    <input className="form-control" type="text" value={simForm.user_id} onChange={e => setSimForm({ ...simForm, user_id: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label">Endpoint</label>
@@ -200,8 +252,10 @@ function App() {
                     <strong>Response Status:</strong> {simResult.status} <br/>
                     <strong>Allowed:</strong> {simResult.allowed ? 'YES' : 'NO'} <br/>
                     <strong>Details:</strong> {simResult.detail} <br/>
-                    {simResult.remaining && <><strong>Remaining Slots:</strong> {simResult.remaining} <br/></>}
-                    {simResult.reset && <><strong>Retry After:</strong> {simResult.reset}s <br/></>}
+                    {simResult.limit && <><strong>Rate Limit:</strong> {simResult.limit} <br/></>}
+                    {simResult.remaining && <><strong>Remaining:</strong> {simResult.remaining} <br/></>}
+                    {simResult.reset && <><strong>Reset In:</strong> {simResult.reset}s <br/></>}
+                    {simResult.algorithm && <><strong>Algorithm:</strong> {simResult.algorithm} <br/></>}
                   </div>
                 )}
               </div>
@@ -227,7 +281,7 @@ function App() {
                   <div className="list-item" key={index}>
                     <div>
                       <p className="list-item-title">{log.identity}</p>
-                      <p className="list-item-subtitle">{log.method} {log.endpoint} • {new Date(log.timestamp).toLocaleTimeString()}</p>
+                      <p className="list-item-subtitle">{log.method} {log.endpoint} - {new Date(log.timestamp).toLocaleTimeString()}</p>
                     </div>
                     <span className="badge danger">Blocked</span>
                   </div>

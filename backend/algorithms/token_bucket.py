@@ -35,7 +35,7 @@ class TokenBucketAlgorithm(BaseAlgorithm):
         elapsed = time.time() - last_refill
         tokens = min(limit, tokens + elapsed * self.refill_rate)
 
-        return int(tokens)
+        return max(0, int(tokens))
 
     async def get_reset_time(self, key: str, window: int) -> int:
         data = await self.store.get_bucket(key)

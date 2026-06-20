@@ -6,6 +6,7 @@ pydantic==2.9.1
 pydantic-settings==2.5.2
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.29.0
+aiosqlite==0.20.0
 prometheus-client==0.20.0
 python-dotenv==1.0.1
 redis-py-cluster==2.1.3

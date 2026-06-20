@@ -53,6 +53,16 @@ class MemoryStore(BaseStore):
     async def set_bucket(self, key: str, tokens: float, timestamp: float) -> None:
         self._data[key] = json.dumps({"tokens": tokens, "last_refill": timestamp})
 
+    async def delete(self, key: str) -> None:
+        self._data.pop(key, None)
+        self._expiry.pop(key, None)
+
+    async def delete_by_pattern(self, pattern: str) -> None:
+        prefix = pattern.rstrip("*")
+        keys = [k for k in list(self._data.keys()) if k.startswith(prefix)]
+        for k in keys:
+            await self.delete(k)
+
     def _evict(self, key: str):
         if key in self._expiry and time.time() > self._expiry[key]:
             del self._data[key]

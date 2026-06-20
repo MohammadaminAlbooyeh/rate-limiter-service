@@ -1,4 +1,5 @@
-from fastapi import Request
+from fastapi import Request, Header, HTTPException
+from backend.utils.config import settings
 
 
 async def get_identity(request: Request):
@@ -9,3 +10,8 @@ async def get_identity(request: Request):
         "endpoint": str(request.url.path),
         "method": request.method,
     }
+
+
+async def require_admin_key(x_admin_key: str = Header("")):
+    if settings.admin_api_key and x_admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin API key")

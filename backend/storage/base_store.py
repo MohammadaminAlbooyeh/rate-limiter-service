@@ -38,3 +38,11 @@ class BaseStore(ABC):
     @abstractmethod
     async def set_bucket(self, key: str, tokens: float, timestamp: float) -> None:
         ...
+
+    @abstractmethod
+    async def delete(self, key: str) -> None:
+        ...
+
+    @abstractmethod
+    async def delete_by_pattern(self, pattern: str) -> None:
+        ...

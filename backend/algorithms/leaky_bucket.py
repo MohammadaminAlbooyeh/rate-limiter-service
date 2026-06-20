@@ -37,7 +37,7 @@ class LeakyBucketAlgorithm(BaseAlgorithm):
         leaked = (time.time() - last_leak) * self.leak_rate
         water = max(0, water - leaked)
 
-        return int(limit - water)
+        return max(0, int(limit - water))
 
     async def get_reset_time(self, key: str, window: int) -> int:
         data = await self.store.get_bucket(key)

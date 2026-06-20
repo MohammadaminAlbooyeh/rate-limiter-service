@@ -16,8 +16,8 @@ class SlidingWindowCounterAlgorithm(BaseAlgorithm):
         current_key = f"{key}:{current_window}"
         previous_key = f"{key}:{previous_window}"
 
-        current_count = await self.store.get(current_key)
-        previous_count = await self.store.get(previous_key)
+        current_count = await self.store.get(current_key) or 0
+        previous_count = await self.store.get(previous_key) or 0
 
         overlap = (now - (current_window * window)) / window
         estimate = current_count + (previous_count * (1 - overlap))
@@ -32,8 +32,8 @@ class SlidingWindowCounterAlgorithm(BaseAlgorithm):
         current_window = math.floor(now / window)
         previous_window = current_window - 1
 
-        current_count = await self.store.get(f"{key}:{current_window}")
-        previous_count = await self.store.get(f"{key}:{previous_window}")
+        current_count = await self.store.get(f"{key}:{current_window}") or 0
+        previous_count = await self.store.get(f"{key}:{previous_window}") or 0
 
         overlap = (now - (current_window * window)) / window
         estimate = current_count + (previous_count * (1 - overlap))

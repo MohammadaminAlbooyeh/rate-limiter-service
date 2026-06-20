@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from backend.models.rule import Rule
 
 
@@ -67,4 +67,25 @@ class BlacklistRequest(BaseModel):
 class AnalyticsResponse(BaseModel):
     identity: str
     requests: int
+    blocked: int
+
+
+class CheckRequest(BaseModel):
+    endpoint: str = "*"
+    method: str = "GET"
+    ip: str = ""
+    api_key: str = ""
+    user_id: str = ""
+
+
+class AlertResponse(BaseModel):
+    identity: str
+    current: int
+    limit: int
+    threshold: str
+
+
+class TimelinePoint(BaseModel):
+    time: str
+    total: int
     blocked: int

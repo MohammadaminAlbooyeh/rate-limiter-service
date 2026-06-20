@@ -1,3 +1,4 @@
+import time
 from typing import List, Optional
 from sqlalchemy.future import select
 from backend.models.database import async_session
@@ -6,11 +7,24 @@ from backend.models.rule import Rule
 
 
 class RuleService:
+    def __init__(self):
+        self._cache: Optional[List[Rule]] = None
+        self._cache_time: float = 0
+        self._cache_ttl: int = 30
+
     async def get_rules(self) -> List[Rule]:
+        if self._cache is not None and (time.time() - self._cache_time) < self._cache_ttl:
+            return self._cache
         async with async_session() as session:
             result = await session.execute(select(RuleDB))
             rules = result.scalars().all()
-            return [r.to_domain() for r in rules]
+            self._cache = [r.to_domain() for r in rules]
+            self._cache_time = time.time()
+            return self._cache
+
+    def _invalidate_cache(self):
+        self._cache = None
+        self._cache_time = 0
 
     async def get_rule(self, rule_id: str) -> Optional[Rule]:
         async with async_session() as session:
@@ -23,6 +37,7 @@ class RuleService:
         async with async_session() as session:
             session.add(db_rule)
             await session.commit()
+            self._invalidate_cache()
             return db_rule.to_domain()
 
     async def update_rule(self, rule_id: str, rule: Rule) -> Optional[Rule]:
@@ -38,6 +53,7 @@ class RuleService:
                 rule_db.endpoint = rule.endpoint
                 rule_db.tier = rule.tier
                 await session.commit()
+                self._invalidate_cache()
                 return rule_db.to_domain()
         return None
 
@@ -48,5 +64,6 @@ class RuleService:
             if rule_db:
                 await session.delete(rule_db)
                 await session.commit()
+                self._invalidate_cache()
                 return True
         return False
