@@ -13,14 +13,16 @@ class LeakyBucketAlgorithm(BaseAlgorithm):
         now = time.time()
 
         if data is None:
-            await self.store.set_bucket(key, 1, now)
-            return True
+            if limit >= 1:
+                await self.store.set_bucket(key, 1, now)
+                return True
+            return False
 
         water, last_leak = data["tokens"], data["last_refill"]
         leaked = (now - last_leak) * self.leak_rate
         water = max(0, water - leaked)
 
-        if water < limit:
+        if water + 1 <= limit:
             await self.store.set_bucket(key, water + 1, now)
             return True
 

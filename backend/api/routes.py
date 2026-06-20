@@ -19,6 +19,15 @@ analytics_service = AnalyticsService()
 
 @router.post("/check")
 async def check_rate_limit(identity: dict):
+    # Check whitelist/blacklist
+    for key in ["api_key", "user_id", "ip"]:
+        val = identity.get(key)
+        if val:
+            if await whitelist_service.is_blacklisted(val):
+                raise HTTPException(status_code=403, detail="Forbidden (Blacklisted)")
+            if await whitelist_service.is_whitelisted(val):
+                return {"allowed": True}
+
     rules = await rule_service.get_rules()
     for rule in rules:
         allowed, remaining, reset = await limiter.check(identity, rule)
@@ -110,4 +119,6 @@ async def top_consumers(limit: int = 10):
 
 @router.get("/metrics")
 async def metrics():
-    return {"metrics": "prometheus format"}
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi import Response
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

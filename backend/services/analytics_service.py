@@ -1,12 +1,73 @@
 from typing import List, Dict
+from sqlalchemy import func, select
+from backend.models.database import async_session
+from backend.models.models import RequestLogDB
 
 
 class AnalyticsService:
+    async def log_request(self, identity: str, endpoint: str, method: str, allowed: bool) -> None:
+        async with async_session() as session:
+            log_entry = RequestLogDB(
+                identity=identity,
+                endpoint=endpoint,
+                method=method,
+                allowed=allowed
+            )
+            session.add(log_entry)
+            await session.commit()
+
     async def get_usage(self, identity: str) -> Dict:
-        return {"identity": identity, "requests": 0, "blocked": 0}
+        async with async_session() as session:
+            query = select(
+                func.count(RequestLogDB.id).label("total"),
+                func.sum(func.cast(RequestLogDB.allowed, func.Integer)).label("allowed"),
+                func.sum(func.cast(~RequestLogDB.allowed, func.Integer)).label("blocked")
+            )
+            if identity and identity != "all":
+                query = query.where(RequestLogDB.identity == identity)
+            
+            result = await session.execute(query)
+            row = result.fetchone()
+            total = row[0] if row and row[0] is not None else 0
+            allowed = row[1] if row and row[1] is not None else 0
+            blocked = row[2] if row and row[2] is not None else 0
+            
+            return {
+                "identity": identity or "all",
+                "total_requests": total,
+                "allowed_requests": allowed,
+                "blocked_requests": blocked
+            }
 
     async def get_blocked(self) -> List[Dict]:
-        return []
+        async with async_session() as session:
+            result = await session.execute(
+                select(RequestLogDB)
+                .where(RequestLogDB.allowed == False)
+                .order_by(RequestLogDB.timestamp.desc())
+                .limit(100)
+            )
+            logs = result.scalars().all()
+            return [
+                {
+                    "identity": log.identity,
+                    "endpoint": log.endpoint,
+                    "method": log.method,
+                    "timestamp": log.timestamp.isoformat(),
+                }
+                for log in logs
+            ]
 
     async def get_top_consumers(self, limit: int = 10) -> List[Dict]:
-        return []
+        async with async_session() as session:
+            result = await session.execute(
+                select(
+                    RequestLogDB.identity,
+                    func.count(RequestLogDB.id).label("total")
+                )
+                .group_by(RequestLogDB.identity)
+                .order_by(func.count(RequestLogDB.id).desc())
+                .limit(limit)
+            )
+            rows = result.all()
+            return [{"identity": row[0], "total_requests": row[1]} for row in rows]
