@@ -3,6 +3,7 @@ from backend.api.schemas import (
     RuleCreate, RuleUpdate, RuleResponse,
     WhitelistRequest, BlacklistRequest,
     AnalyticsResponse, CheckRequest, AlertResponse, TimelinePoint,
+    SimulateRequest, SimulateResponse
 )
 from backend.api.dependencies import require_admin_key
 from backend.services.limiter_service import LimiterService
