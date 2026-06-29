@@ -16,3 +16,4 @@ venv/
 .ruff_cache/
 *.code-workspace
 .DS_Store
+.aider*

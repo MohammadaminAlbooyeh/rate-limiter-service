@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from backend.api.schemas import (
     RuleCreate, RuleUpdate, RuleResponse,
     WhitelistRequest, BlacklistRequest,
@@ -14,7 +14,7 @@ from backend.services.alert_service import AlertService
 
 router = APIRouter(prefix="/api/v1")
 
-limiter = LimiterService()
+# RuleService and other stateless services can stay as module-level singletons
 rule_service = RuleService()
 whitelist_service = WhitelistService()
 analytics_service = AnalyticsService()
@@ -31,10 +31,9 @@ async def simulate_rate_limit(req: SimulateRequest):
         "method": req.method,
     }
     
-    # Use temporary store for simulation
+    # Use temporary store for simulation (isolated from live state)
     from backend.storage.memory_store import MemoryStore
     temp_store = MemoryStore()
-    from backend.services.limiter_service import LimiterService
     temp_limiter = LimiterService(store=temp_store)
     
     # Create temporary rule from request
@@ -54,7 +53,8 @@ async def simulate_rate_limit(req: SimulateRequest):
 
 
 @router.post("/check")
-async def check_rate_limit(req: CheckRequest):
+async def check_rate_limit(req: CheckRequest, request: Request):
+    limiter = request.app.state.limiter
     identity = {
         "ip": req.ip,
         "api_key": req.api_key,
@@ -90,7 +90,8 @@ async def check_rate_limit(req: CheckRequest):
 
 
 @router.post("/reset/{identity}", dependencies=[Depends(require_admin_key)])
-async def reset_limit(identity: str):
+async def reset_limit(identity: str, request: Request):
+    limiter = request.app.state.limiter
     await limiter.reset_identity(identity)
     return {"reset": True}
 

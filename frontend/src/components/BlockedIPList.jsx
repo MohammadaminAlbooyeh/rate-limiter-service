@@ -11,9 +11,9 @@ function BlockedIPList() {
 
   return (
     <div>
-      <h2>Blocked IPs</h2>
+      <h2>Blocked Requests</h2>
       <ul>
-        {blocked.map((entry, i) => <li key={i}>{entry.ip}</li>)}
+        {blocked.map((entry, i) => <li key={i}>{entry.identity} — {entry.endpoint}</li>)}
       </ul>
     </div>
   );

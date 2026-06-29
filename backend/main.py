@@ -46,6 +46,9 @@ app.add_middleware(
 excluded_paths = {"/health", "/metrics", "/docs", "/openapi.json", "/ws/analytics", "/api/v1/check"}
 app.add_middleware(RateLimitMiddleware, limiter=limiter, exclude_paths=excluded_paths)
 
+# Share the limiter instance with routes via app.state
+app.state.limiter = limiter
+
 app.include_router(router)
 
 

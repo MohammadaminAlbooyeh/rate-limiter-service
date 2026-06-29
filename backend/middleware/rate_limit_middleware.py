@@ -1,3 +1,4 @@
+import asyncio
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -38,12 +39,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 val = identity.get(key)
                 if val:
                     if await whitelist_service.is_blacklisted(val):
-                        await analytics_service.log_request(
+                        asyncio.create_task(analytics_service.log_request(
                             identity=val,
                             endpoint=identity.get("endpoint", "*"),
                             method=identity.get("method", "GET"),
                             allowed=False
-                        )
+                        ))
                         REQUEST_COUNT.labels(
                             identity=val,
                             endpoint=identity.get("endpoint", "*"),
@@ -55,12 +56,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             content="Forbidden (Blacklisted)",
                         )
                     if await whitelist_service.is_whitelisted(val):
-                        await analytics_service.log_request(
+                        asyncio.create_task(analytics_service.log_request(
                             identity=val,
                             endpoint=identity.get("endpoint", "*"),
                             method=identity.get("method", "GET"),
                             allowed=True
-                        )
+                        ))
                         REQUEST_COUNT.labels(
                             identity=val,
                             endpoint=identity.get("endpoint", "*"),
@@ -80,12 +81,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if rule is None:
             try:
                 ident_str = identity.get("api_key") or identity.get("user_id") or identity.get("ip") or "unknown"
-                await analytics_service.log_request(
+                asyncio.create_task(analytics_service.log_request(
                     identity=ident_str,
                     endpoint=identity.get("endpoint", "*"),
                     method=identity.get("method", "GET"),
                     allowed=True
-                )
+                ))
                 REQUEST_COUNT.labels(
                     identity=ident_str,
                     endpoint=identity.get("endpoint", "*"),
@@ -113,12 +114,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     logger.error(f"RateLimiter AlertService error: {alert_err}")
 
             ident_str = identity.get("api_key") or identity.get("user_id") or identity.get("ip") or "unknown"
-            await analytics_service.log_request(
+            asyncio.create_task(analytics_service.log_request(
                 identity=ident_str,
                 endpoint=identity.get("endpoint", "*"),
                 method=identity.get("method", "GET"),
                 allowed=allowed
-            )
+            ))
 
             status_str = "allowed" if allowed else "blocked"
             REQUEST_COUNT.labels(

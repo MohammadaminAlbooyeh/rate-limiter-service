@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 from backend.algorithms import (
     FixedWindowAlgorithm,
     SlidingWindowLogAlgorithm,
@@ -6,6 +7,7 @@ from backend.algorithms import (
     TokenBucketAlgorithm,
     LeakyBucketAlgorithm,
 )
+from backend.storage.base_store import BaseStore
 from backend.storage.redis_store import RedisStore
 from backend.storage.redis_cluster import RedisClusterStore
 from backend.storage.memory_store import MemoryStore
@@ -17,8 +19,10 @@ logger = logging.getLogger("ratelimiter.limiter_service")
 
 
 class LimiterService:
-    def __init__(self):
-        if settings.use_redis_cluster:
+    def __init__(self, store: Optional[BaseStore] = None):
+        if store is not None:
+            self.store = store
+        elif settings.use_redis_cluster:
             nodes = [n.strip() for n in settings.redis_cluster_nodes.split(",") if n.strip()]
             startup_nodes = []
             for node in nodes:

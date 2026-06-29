@@ -1,6 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import RequestChart from './components/RequestChart';
-import AlgorithmSelector from './components/AlgorithmSelector';
+import React, { useState, useEffect, useCallback } from 'react';
+import DashboardPage from './pages/DashboardPage';
+import RulesPage from './pages/RulesPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import AlertsPage from './pages/AlertsPage';
+import SettingsPage from './pages/SettingsPage';
+
+const apiHost = process.env.REACT_APP_API_URL || '';
+const ADMIN_KEY_STORAGE = 'rate_limiter_admin_key';
+
+function getAdminKey() {
+  return localStorage.getItem(ADMIN_KEY_STORAGE) || '';
+}
+
+function apiFetch(path, options = {}) {
+  const adminKey = getAdminKey();
+  const headers = { ...(options.headers || {}) };
+  if (adminKey) headers['X-Admin-Key'] = adminKey;
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  return fetch(`${apiHost}${path}`, { ...options, headers });
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -9,40 +27,34 @@ function App() {
   const [blockedLogs, setBlockedLogs] = useState([]);
   const [topConsumers, setTopConsumers] = useState([]);
   const [timeline, setTimeline] = useState([]);
-
+  const [alerts, setAlerts] = useState([]);
   const [whitelist, setWhitelist] = useState([]);
   const [blacklist, setBlacklist] = useState([]);
-
-  const [ruleForm, setRuleForm] = useState({ name: '', algorithm: 'fixed_window', limit: 100, window: 60, endpoint: '*', identity: 'ip' });
-  const [listForm, setListForm] = useState({ identity: '', reason: '', type: 'whitelist' });
-  const [simForm, setSimForm] = useState({ ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET' });
+  const [adminKeyInput, setAdminKeyInput] = useState(getAdminKey());
   const [simResult, setSimResult] = useState(null);
+  const simFormDefaults = { ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET' };
+  const [simForm, setSimForm] = useState(simFormDefaults);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const statsRes = await fetch('/api/v1/analytics/usage?identity=all');
-      const statsData = await statsRes.json();
-      setStats(statsData);
-
-      const blockedRes = await fetch('/api/v1/analytics/blocked');
-      const blockedData = await blockedRes.json();
-      setBlockedLogs(blockedData);
-
-      const rulesRes = await fetch('/api/v1/rules');
-      const rulesData = await rulesRes.json();
-      setRules(rulesData);
-
-      const topRes = await fetch('/api/v1/analytics/top?limit=10');
-      const topData = await topRes.json();
-      setTopConsumers(topData);
-
-      const timelineRes = await fetch('/api/v1/analytics/timeline?minutes=30');
-      const timelineData = await timelineRes.json();
-      setTimeline(timelineData);
+      const [statsRes, blockedRes, rulesRes, topRes, timelineRes, alertsRes] = await Promise.all([
+        apiFetch('/api/v1/analytics/usage?identity=all'),
+        apiFetch('/api/v1/analytics/blocked'),
+        apiFetch('/api/v1/rules'),
+        apiFetch('/api/v1/analytics/top?limit=10'),
+        apiFetch('/api/v1/analytics/timeline?minutes=30'),
+        apiFetch('/api/v1/alerts'),
+      ]);
+      if (statsRes.ok) setStats(await statsRes.json());
+      if (blockedRes.ok) setBlockedLogs(await blockedRes.json());
+      if (rulesRes.ok) setRules(await rulesRes.json());
+      if (topRes.ok) setTopConsumers(await topRes.json());
+      if (timelineRes.ok) setTimeline(await timelineRes.json());
+      if (alertsRes.ok) setAlerts(await alertsRes.json());
     } catch (e) {
-      console.error("Failed to fetch dashboard data", e);
+      console.error('Failed to fetch dashboard data', e);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -50,315 +62,117 @@ function App() {
     const wsHost = window.location.hostname;
     const wsPort = window.location.port === '3000' ? '8000' : window.location.port;
     const wsUrl = `${wsProto}//${wsHost}${wsPort ? `:${wsPort}` : ''}/ws/analytics`;
-
     const ws = new WebSocket(wsUrl);
     ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'log') {
-        const log = msg.data;
-        setStats(prev => {
-          const total = (prev.total_requests || 0) + 1;
-          const allowed = (prev.allowed_requests || 0) + (log.allowed ? 1 : 0);
-          const blocked = (prev.blocked_requests || 0) + (log.allowed ? 0 : 1);
-          return { total_requests: total, allowed_requests: allowed, blocked_requests: blocked };
-        });
-        if (!log.allowed) {
-          setBlockedLogs(prev => [log, ...prev.slice(0, 49)]);
-        }
-        setTopConsumers(prev => {
-          const exists = prev.find(c => c.identity === log.identity);
-          if (exists) {
-            return prev.map(c => c.identity === log.identity ? { ...c, total_requests: c.total_requests + 1 } : c)
-              .sort((a, b) => b.total_requests - a.total_requests);
-          } else {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'log') {
+          const log = msg.data;
+          setStats(prev => ({
+            total_requests: (prev.total_requests || 0) + 1,
+            allowed_requests: (prev.allowed_requests || 0) + (log.allowed ? 1 : 0),
+            blocked_requests: (prev.blocked_requests || 0) + (log.allowed ? 0 : 1),
+          }));
+          if (!log.allowed) setBlockedLogs(prev => [log, ...prev.slice(0, 49)]);
+          setTopConsumers(prev => {
+            const exists = prev.find(c => c.identity === log.identity);
+            if (exists) {
+              return prev.map(c => c.identity === log.identity
+                ? { ...c, total_requests: c.total_requests + 1 } : c)
+                .sort((a, b) => b.total_requests - a.total_requests);
+            }
             return [...prev, { identity: log.identity, total_requests: 1 }]
-              .sort((a, b) => b.total_requests - a.total_requests)
-              .slice(0, 10);
-          }
-        });
-      }
-    };
-
-    const interval = setInterval(fetchData, 10000);
-    return () => {
-      ws.close();
-      clearInterval(interval);
-    };
-  }, []);
-
-  const handleCreateRule = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch('/api/v1/rules', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ruleForm)
-      });
-      if (res.ok) {
-        setRuleForm({ name: '', algorithm: 'fixed_window', limit: 100, window: 60, endpoint: '*', identity: 'ip' });
-        fetchData();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDeleteRule = async (ruleId) => {
-    try {
-      await fetch(`/api/v1/rules/${ruleId}`, { method: 'DELETE' });
-      fetchData();
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleAddList = async (e) => {
-    e.preventDefault();
-    try {
-      const endpoint = listForm.type === 'whitelist' ? '/api/v1/whitelist' : '/api/v1/blacklist';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identity: listForm.identity, reason: listForm.reason })
-      });
-      if (res.ok) {
-        if (listForm.type === 'whitelist') {
-          setWhitelist([...whitelist, { identity: listForm.identity, reason: listForm.reason }]);
-        } else {
-          setBlacklist([...blacklist, { identity: listForm.identity, reason: listForm.reason }]);
+              .sort((a, b) => b.total_requests - a.total_requests).slice(0, 10);
+          });
         }
-        setListForm({ identity: '', reason: '', type: 'whitelist' });
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+      } catch (e) { /* ignore parse errors */ }
+    };
+    const interval = setInterval(fetchData, 10000);
+    return () => { ws.close(); clearInterval(interval); };
+  }, [fetchData]);
 
   const handleSimulateRequest = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        endpoint: simForm.endpoint,
-        method: simForm.method,
-        ip: simForm.ip,
-        api_key: simForm.api_key,
-        user_id: simForm.user_id,
-      };
-
-      const res = await fetch('/api/v1/check', {
+      const res = await apiFetch('/api/v1/check', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(simForm),
       });
-
-      const status = res.status;
       const data = await res.json();
-
       setSimResult({
-        status,
-        allowed: status !== 429 && status !== 403,
+        status: res.status,
+        allowed: res.status !== 429 && res.status !== 403,
         detail: data.detail || 'Success',
         limit: res.headers.get('X-RateLimit-Limit'),
         remaining: res.headers.get('X-RateLimit-Remaining'),
         reset: res.headers.get('X-RateLimit-Reset'),
         algorithm: res.headers.get('X-RateLimit-Algorithm'),
       });
-      fetchData();
     } catch (err) {
       console.error(err);
     }
   };
 
+  const handleSaveAdminKey = () => {
+    localStorage.setItem(ADMIN_KEY_STORAGE, adminKeyInput);
+  };
+
+  const handleAddListEntry = async (form) => {
+    const endpoint = form.type === 'whitelist' ? '/api/v1/whitelist' : '/api/v1/blacklist';
+    await apiFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ identity: form.identity, reason: form.reason }),
+    });
+    fetchData();
+  };
+
   return (
     <div className="app-container">
       <div className="sidebar">
-        <div className="sidebar-brand">
-          RateLimiter.io
-        </div>
+        <div className="sidebar-brand">RateLimiter.io</div>
         <ul className="nav-links">
-          <li className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-            Dashboard
-          </li>
-          <li className={`nav-item ${activeTab === 'rules' ? 'active' : ''}`} onClick={() => setActiveTab('rules')}>
-            Rules
-          </li>
-          <li className={`nav-item ${activeTab === 'lists' ? 'active' : ''}`} onClick={() => setActiveTab('lists')}>
-            Whitelist / Blacklist
-          </li>
+          {[
+            { key: 'dashboard', label: 'Dashboard' },
+            { key: 'rules', label: 'Rules' },
+            { key: 'analytics', label: 'Analytics' },
+            { key: 'alerts', label: 'Alerts' },
+            { key: 'lists', label: 'Whitelist / Blacklist' },
+            { key: 'settings', label: 'Settings' },
+          ].map(item => (
+            <li key={item.key}
+              className={`nav-item ${activeTab === item.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(item.key)}>
+              {item.label}
+            </li>
+          ))}
         </ul>
       </div>
 
       <div className="main-content">
         {activeTab === 'dashboard' && (
-          <div>
-            <div className="header-container">
-              <h1 className="header-title">Analytics Dashboard</h1>
-              <p className="header-subtitle">Real-time stats, rate limiting decisions, and system performance logs.</p>
-            </div>
-
-            <div className="grid-3">
-              <div className="stat-card">
-                <div className="stat-label">Total Requests</div>
-                <div className="stat-value total">{stats.total_requests || 0}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Allowed Requests</div>
-                <div className="stat-value allowed">{stats.allowed_requests || 0}</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Blocked Requests</div>
-                <div className="stat-value blocked">{stats.blocked_requests || 0}</div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 className="card-title">Request Timeline (Last 30 min)</h3>
-              <RequestChart data={timeline} />
-            </div>
-
-            <div className="grid-3" style={{ gridTemplateColumns: '2fr 1fr' }}>
-              <div className="card">
-                <h3 className="card-title">Live Simulator Tool</h3>
-                <form onSubmit={handleSimulateRequest} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '1rem', alignItems: 'end' }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Client IP</label>
-                    <input className="form-control" type="text" value={simForm.ip} onChange={e => setSimForm({ ...simForm, ip: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">API Key</label>
-                    <input className="form-control" type="text" value={simForm.api_key} onChange={e => setSimForm({ ...simForm, api_key: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">User ID</label>
-                    <input className="form-control" type="text" value={simForm.user_id} onChange={e => setSimForm({ ...simForm, user_id: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">Endpoint</label>
-                    <input className="form-control" type="text" value={simForm.endpoint} onChange={e => setSimForm({ ...simForm, endpoint: e.target.value })} required />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label">HTTP Method</label>
-                    <select className="form-control" value={simForm.method} onChange={e => setSimForm({ ...simForm, method: e.target.value })}>
-                      <option value="GET">GET</option>
-                      <option value="POST">POST</option>
-                      <option value="DELETE">DELETE</option>
-                    </select>
-                  </div>
-                  <button className="btn" type="submit">Send Test Request</button>
-                </form>
-
-                {simResult && (
-                  <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', background: simResult.allowed ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${simResult.allowed ? 'var(--success)' : 'var(--danger)'}` }}>
-                    <strong>Response Status:</strong> {simResult.status} <br/>
-                    <strong>Allowed:</strong> {simResult.allowed ? 'YES' : 'NO'} <br/>
-                    <strong>Details:</strong> {simResult.detail} <br/>
-                    {simResult.limit && <><strong>Rate Limit:</strong> {simResult.limit} <br/></>}
-                    {simResult.remaining && <><strong>Remaining:</strong> {simResult.remaining} <br/></>}
-                    {simResult.reset && <><strong>Reset In:</strong> {simResult.reset}s <br/></>}
-                    {simResult.algorithm && <><strong>Algorithm:</strong> {simResult.algorithm} <br/></>}
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <h3 className="card-title">Top Consumers</h3>
-                <div className="list-container">
-                  {topConsumers.map((consumer, index) => (
-                    <div className="list-item" key={index} style={{ padding: '0.5rem 1rem' }}>
-                      <span>{consumer.identity}</span>
-                      <span className="badge success">{consumer.total_requests} reqs</span>
-                    </div>
-                  ))}
-                  {topConsumers.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No request data available.</p>}
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 className="card-title">Recently Blocked Requests</h3>
-              <div className="list-container">
-                {blockedLogs.map((log, index) => (
-                  <div className="list-item" key={index}>
-                    <div>
-                      <p className="list-item-title">{log.identity}</p>
-                      <p className="list-item-subtitle">{log.method} {log.endpoint} - {new Date(log.timestamp).toLocaleTimeString()}</p>
-                    </div>
-                    <span className="badge danger">Blocked</span>
-                  </div>
-                ))}
-                {blockedLogs.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No recently blocked requests.</p>}
-              </div>
-            </div>
-          </div>
+          <DashboardPage
+            stats={stats}
+            blockedLogs={blockedLogs}
+            topConsumers={topConsumers}
+            timeline={timeline}
+            simForm={simForm}
+            simResult={simResult}
+            onSimFormChange={setSimForm}
+            onSimulate={handleSimulateRequest}
+            onRefresh={fetchData}
+          />
         )}
 
         {activeTab === 'rules' && (
-          <div>
-            <div className="header-container">
-              <h1 className="header-title">Rate Limiting Rules</h1>
-              <p className="header-subtitle">Define request capacities, windows, and custom algorithm bindings.</p>
-            </div>
+          <RulesPage rules={rules} onRefresh={fetchData} apiFetch={apiFetch} />
+        )}
 
-            <div className="grid-3" style={{ gridTemplateColumns: '1fr 2fr' }}>
-              <div className="card">
-                <h3 className="card-title">Create New Rule</h3>
-                <form onSubmit={handleCreateRule}>
-                  <div className="form-group">
-                    <label className="form-label">Rule Name</label>
-                    <input className="form-control" type="text" value={ruleForm.name} onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })} placeholder="e.g. Premium Tier Limit" required />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Algorithm</label>
-                    <div className="form-control" style={{ padding: 0 }}>
-                      <AlgorithmSelector value={ruleForm.algorithm} onChange={val => setRuleForm({ ...ruleForm, algorithm: val })} />
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Rate Limit Capacity</label>
-                    <input className="form-control" type="number" value={ruleForm.limit} onChange={e => setRuleForm({ ...ruleForm, limit: parseInt(e.target.value) })} required />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Time Window (seconds)</label>
-                    <input className="form-control" type="number" value={ruleForm.window} onChange={e => setRuleForm({ ...ruleForm, window: parseInt(e.target.value) })} required />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Identity Match Attribute</label>
-                    <select className="form-control" value={ruleForm.identity} onChange={e => setRuleForm({ ...ruleForm, identity: e.target.value })}>
-                      <option value="ip">Client IP Address</option>
-                      <option value="api_key">API Key (Header)</option>
-                      <option value="user_id">User ID (Header)</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Endpoint Path Pattern</label>
-                    <input className="form-control" type="text" value={ruleForm.endpoint} onChange={e => setRuleForm({ ...ruleForm, endpoint: e.target.value })} required />
-                  </div>
-                  <button className="btn" type="submit" style={{ width: '100%' }}>Create Rule</button>
-                </form>
-              </div>
+        {activeTab === 'analytics' && (
+          <AnalyticsPage data={topConsumers} timeline={timeline} blockedLogs={blockedLogs} />
+        )}
 
-              <div className="card">
-                <h3 className="card-title">Active Rules</h3>
-                <div className="list-container">
-                  {rules.map(rule => (
-                    <div className="list-item" key={rule.id}>
-                      <div>
-                        <p className="list-item-title">{rule.name}</p>
-                        <p className="list-item-subtitle">
-                          Allows {rule.limit} requests / {rule.window}s matching endpoint <code>{rule.endpoint}</code> using <code>{rule.identity}</code> key.
-                        </p>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <span className="badge algorithm">{rule.algorithm}</span>
-                        <button className="btn btn-secondary btn-danger" onClick={() => handleDeleteRule(rule.id)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.875rem' }}>Delete</button>
-                      </div>
-                    </div>
-                  ))}
-                  {rules.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No active rules defined yet.</p>}
-                </div>
-              </div>
-            </div>
-          </div>
+        {activeTab === 'alerts' && (
+          <AlertsPage alerts={alerts} onRefresh={fetchData} />
         )}
 
         {activeTab === 'lists' && (
@@ -367,22 +181,21 @@ function App() {
               <h1 className="header-title">Whitelist & Blacklist</h1>
               <p className="header-subtitle">Directly allow or deny specific clients before algorithm execution.</p>
             </div>
-
             <div className="grid-3" style={{ gridTemplateColumns: '1fr 2fr' }}>
               <div className="card">
                 <h3 className="card-title">Add Identity Entry</h3>
-                <form onSubmit={handleAddList}>
+                <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.target); handleAddListEntry({ identity: fd.get('identity'), reason: fd.get('reason'), type: fd.get('type') }); }}>
                   <div className="form-group">
                     <label className="form-label">Client Identity (IP/User ID/API Key)</label>
-                    <input className="form-control" type="text" value={listForm.identity} onChange={e => setListForm({ ...listForm, identity: e.target.value })} placeholder="e.g. 192.168.1.1" required />
+                    <input className="form-control" type="text" name="identity" placeholder="e.g. 192.168.1.1" required />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Reason / Notes</label>
-                    <input className="form-control" type="text" value={listForm.reason} onChange={e => setListForm({ ...listForm, reason: e.target.value })} placeholder="e.g. VIP User Bypass" />
+                    <input className="form-control" type="text" name="reason" placeholder="e.g. VIP User Bypass" />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Type</label>
-                    <select className="form-control" value={listForm.type} onChange={e => setListForm({ ...listForm, type: e.target.value })}>
+                    <select className="form-control" name="type">
                       <option value="whitelist">Whitelist (Always Allow)</option>
                       <option value="blacklist">Blacklist (Always Block)</option>
                     </select>
@@ -390,31 +203,23 @@ function App() {
                   <button className="btn" type="submit" style={{ width: '100%' }}>Add Entry</button>
                 </form>
               </div>
-
               <div className="card">
                 <h3 className="card-title">Whitelisted & Blacklisted Client Registries</h3>
                 <h4>Always Allowed (Whitelist)</h4>
                 <div className="list-container" style={{ marginBottom: '2rem' }}>
                   {whitelist.map((w, i) => (
                     <div className="list-item" key={i}>
-                      <div>
-                        <p className="list-item-title">{w.identity}</p>
-                        <p className="list-item-subtitle">{w.reason}</p>
-                      </div>
+                      <div><p className="list-item-title">{w.identity}</p><p className="list-item-subtitle">{w.reason}</p></div>
                       <span className="badge success">Whitelisted</span>
                     </div>
                   ))}
                   {whitelist.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No whitelisted clients.</p>}
                 </div>
-
                 <h4>Always Denied (Blacklist)</h4>
                 <div className="list-container">
                   {blacklist.map((b, i) => (
                     <div className="list-item" key={i}>
-                      <div>
-                        <p className="list-item-title">{b.identity}</p>
-                        <p className="list-item-subtitle">{b.reason}</p>
-                      </div>
+                      <div><p className="list-item-title">{b.identity}</p><p className="list-item-subtitle">{b.reason}</p></div>
                       <span className="badge danger">Blacklisted</span>
                     </div>
                   ))}
@@ -423,6 +228,14 @@ function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsPage
+            adminKey={adminKeyInput}
+            onAdminKeyChange={setAdminKeyInput}
+            onSaveAdminKey={handleSaveAdminKey}
+          />
         )}
       </div>
     </div>
