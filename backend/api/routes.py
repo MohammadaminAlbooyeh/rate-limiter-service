@@ -108,7 +108,8 @@ async def create_rule(rule: RuleCreate):
 
 @router.put("/rules/{rule_id}", response_model=RuleResponse, dependencies=[Depends(require_admin_key)])
 async def update_rule(rule_id: str, rule: RuleUpdate):
-    updated = await rule_service.update_rule(rule_id, rule.to_model())
+    updates = rule.model_dump(exclude_unset=True)
+    updated = await rule_service.update_rule(rule_id, updates)
     if not updated:
         raise HTTPException(status_code=404, detail="Rule not found")
     return updated
@@ -120,6 +121,16 @@ async def delete_rule(rule_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"deleted": True}
+
+
+@router.get("/whitelist", dependencies=[Depends(require_admin_key)])
+async def list_whitelist():
+    return await whitelist_service.get_all_whitelist()
+
+
+@router.get("/blacklist", dependencies=[Depends(require_admin_key)])
+async def list_blacklist():
+    return await whitelist_service.get_all_blacklist()
 
 
 @router.post("/whitelist", dependencies=[Depends(require_admin_key)])

@@ -89,11 +89,17 @@ class AnalyticsService:
 
     async def get_timeline(self, minutes: int = 30) -> List[Dict]:
         from datetime import datetime, timedelta
+        from sqlalchemy import text
         cutoff = datetime.utcnow() - timedelta(minutes=minutes)
         async with async_session() as session:
+            dialect = session.bind.dialect.name if session.bind else "sqlite"
+            if dialect == "postgresql":
+                minute_expr = func.date_trunc("minute", RequestLogDB.timestamp).label("minute")
+            else:
+                minute_expr = func.strftime("%Y-%m-%d %H:%M", RequestLogDB.timestamp).label("minute")
             result = await session.execute(
                 select(
-                    func.strftime("%Y-%m-%d %H:%M", RequestLogDB.timestamp).label("minute"),
+                    minute_expr,
                     func.count(RequestLogDB.id).label("total"),
                     func.sum(func.cast(RequestLogDB.allowed == False, func.Integer)).label("blocked"),
                 )

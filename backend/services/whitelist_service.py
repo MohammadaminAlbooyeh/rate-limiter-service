@@ -45,3 +45,21 @@ class WhitelistService:
                 await session.commit()
                 return True
         return False
+
+    async def get_all_whitelist(self) -> list[dict]:
+        async with async_session() as session:
+            result = await session.execute(select(WhitelistDB).order_by(WhitelistDB.created_at.desc()))
+            rows = result.scalars().all()
+            return [
+                {"identity": r.identity, "reason": r.reason or "", "created_at": r.created_at.isoformat()}
+                for r in rows
+            ]
+
+    async def get_all_blacklist(self) -> list[dict]:
+        async with async_session() as session:
+            result = await session.execute(select(BlacklistDB).order_by(BlacklistDB.created_at.desc()))
+            rows = result.scalars().all()
+            return [
+                {"identity": r.identity, "reason": r.reason or "", "created_at": r.created_at.isoformat()}
+                for r in rows
+            ]

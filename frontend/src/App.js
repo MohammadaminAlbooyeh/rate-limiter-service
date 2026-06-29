@@ -37,13 +37,15 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, blockedRes, rulesRes, topRes, timelineRes, alertsRes] = await Promise.all([
+      const [statsRes, blockedRes, rulesRes, topRes, timelineRes, alertsRes, whitelistRes, blacklistRes] = await Promise.all([
         apiFetch('/api/v1/analytics/usage?identity=all'),
         apiFetch('/api/v1/analytics/blocked'),
         apiFetch('/api/v1/rules'),
         apiFetch('/api/v1/analytics/top?limit=10'),
         apiFetch('/api/v1/analytics/timeline?minutes=30'),
         apiFetch('/api/v1/alerts'),
+        apiFetch('/api/v1/whitelist'),
+        apiFetch('/api/v1/blacklist'),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (blockedRes.ok) setBlockedLogs(await blockedRes.json());
@@ -51,6 +53,8 @@ function App() {
       if (topRes.ok) setTopConsumers(await topRes.json());
       if (timelineRes.ok) setTimeline(await timelineRes.json());
       if (alertsRes.ok) setAlerts(await alertsRes.json());
+      if (whitelistRes.ok) setWhitelist(await whitelistRes.json());
+      if (blacklistRes.ok) setBlacklist(await blacklistRes.json());
     } catch (e) {
       console.error('Failed to fetch dashboard data', e);
     }
@@ -123,6 +127,11 @@ function App() {
       method: 'POST',
       body: JSON.stringify({ identity: form.identity, reason: form.reason }),
     });
+    fetchData();
+  };
+
+  const handleDeleteListEntry = async (type, identity) => {
+    await apiFetch(`/api/v1/${type}/${encodeURIComponent(identity)}`, { method: 'DELETE' });
     fetchData();
   };
 
@@ -210,7 +219,11 @@ function App() {
                   {whitelist.map((w, i) => (
                     <div className="list-item" key={i}>
                       <div><p className="list-item-title">{w.identity}</p><p className="list-item-subtitle">{w.reason}</p></div>
-                      <span className="badge success">Whitelisted</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className="badge success">Whitelisted</span>
+                        <button className="btn" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', background: 'var(--danger)' }}
+                          onClick={() => handleDeleteListEntry('whitelist', w.identity)}>Remove</button>
+                      </div>
                     </div>
                   ))}
                   {whitelist.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No whitelisted clients.</p>}
@@ -220,7 +233,11 @@ function App() {
                   {blacklist.map((b, i) => (
                     <div className="list-item" key={i}>
                       <div><p className="list-item-title">{b.identity}</p><p className="list-item-subtitle">{b.reason}</p></div>
-                      <span className="badge danger">Blacklisted</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className="badge danger">Blacklisted</span>
+                        <button className="btn" style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', background: 'var(--danger)' }}
+                          onClick={() => handleDeleteListEntry('blacklist', b.identity)}>Remove</button>
+                      </div>
                     </div>
                   ))}
                   {blacklist.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>No blacklisted clients.</p>}

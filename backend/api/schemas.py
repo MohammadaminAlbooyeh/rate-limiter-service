@@ -31,17 +31,6 @@ class RuleUpdate(BaseModel):
     endpoint: Optional[str] = None
     tier: Optional[str] = None
 
-    def to_model(self) -> Rule:
-        return Rule(
-            name=self.name or "",
-            identity="",
-            algorithm="",
-            limit=self.limit or 0,
-            window=self.window or 0,
-            endpoint=self.endpoint or "*",
-            tier=self.tier,
-        )
-
 
 class RuleResponse(BaseModel):
     id: str

@@ -40,18 +40,14 @@ class RuleService:
             self._invalidate_cache()
             return db_rule.to_domain()
 
-    async def update_rule(self, rule_id: str, rule: Rule) -> Optional[Rule]:
+    async def update_rule(self, rule_id: str, updates: dict) -> Optional[Rule]:
         async with async_session() as session:
             result = await session.execute(select(RuleDB).where(RuleDB.id == rule_id))
             rule_db = result.scalar_one_or_none()
             if rule_db:
-                rule_db.name = rule.name
-                rule_db.identity = rule.identity
-                rule_db.algorithm = rule.algorithm
-                rule_db.limit = rule.limit
-                rule_db.window = rule.window
-                rule_db.endpoint = rule.endpoint
-                rule_db.tier = rule.tier
+                for field in ["name", "identity", "algorithm", "limit", "window", "endpoint", "tier"]:
+                    if field in updates:
+                        setattr(rule_db, field, updates[field])
                 await session.commit()
                 self._invalidate_cache()
                 return rule_db.to_domain()
