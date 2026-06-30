@@ -32,11 +32,12 @@ class AnalyticsService:
                 pass
 
     async def get_usage(self, identity: str) -> Dict:
+        from sqlalchemy import case
         async with async_session() as session:
             query = select(
                 func.count(RequestLogDB.id).label("total"),
-                func.sum(func.cast(RequestLogDB.allowed, func.Integer)).label("allowed"),
-                func.sum(func.cast(~RequestLogDB.allowed, func.Integer)).label("blocked")
+                func.sum(case((RequestLogDB.allowed == True, 1), else_=0)).label("allowed"),
+                func.sum(case((RequestLogDB.allowed == False, 1), else_=0)).label("blocked"),
             )
             if identity and identity != "all":
                 query = query.where(RequestLogDB.identity == identity)
@@ -54,13 +55,14 @@ class AnalyticsService:
                 "blocked_requests": blocked
             }
 
-    async def get_blocked(self) -> List[Dict]:
+    async def get_blocked(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         async with async_session() as session:
             result = await session.execute(
                 select(RequestLogDB)
                 .where(RequestLogDB.allowed == False)
                 .order_by(RequestLogDB.timestamp.desc())
-                .limit(100)
+                .offset(offset)
+                .limit(limit)
             )
             logs = result.scalars().all()
             return [
@@ -89,7 +91,7 @@ class AnalyticsService:
 
     async def get_timeline(self, minutes: int = 30) -> List[Dict]:
         from datetime import datetime, timedelta
-        from sqlalchemy import text
+        from sqlalchemy import case
         cutoff = datetime.utcnow() - timedelta(minutes=minutes)
         async with async_session() as session:
             dialect = session.bind.dialect.name if session.bind else "sqlite"
@@ -101,7 +103,7 @@ class AnalyticsService:
                 select(
                     minute_expr,
                     func.count(RequestLogDB.id).label("total"),
-                    func.sum(func.cast(RequestLogDB.allowed == False, func.Integer)).label("blocked"),
+                    func.sum(case((RequestLogDB.allowed == False, 1), else_=0)).label("blocked"),
                 )
                 .where(RequestLogDB.timestamp >= cutoff)
                 .group_by("minute")

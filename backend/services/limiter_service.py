@@ -33,7 +33,7 @@ class LimiterService:
             self.store = RedisStore()
         else:
             self.store = MemoryStore()
-        self.algorithms = {
+        self.algorithms: dict = {
             "fixed_window": FixedWindowAlgorithm(self.store),
             "sliding_window_log": SlidingWindowLogAlgorithm(self.store),
             "sliding_window_counter": SlidingWindowCounterAlgorithm(self.store),
@@ -46,7 +46,7 @@ class LimiterService:
         key = f"rate_limit:{identity[rule.identity]}:{rule.endpoint}"
         allowed = await algo.allow_request(key, rule.limit, rule.window)
         remaining = await algo.get_remaining(key, rule.limit, rule.window)
-        reset = await algo.get_reset_time(key, rule.window)
+        reset = await algo.get_reset_time(key, rule.limit, rule.window)
         return allowed, remaining, reset
 
     async def reset_identity(self, identity_value: str):

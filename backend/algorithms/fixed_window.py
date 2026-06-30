@@ -14,5 +14,5 @@ class FixedWindowAlgorithm(BaseAlgorithm):
         current = await self.store.get(key)
         return max(0, limit - current)
 
-    async def get_reset_time(self, key: str, window: int) -> int:
+    async def get_reset_time(self, key: str, limit: int, window: int) -> int:
         return await self.store.ttl(key)

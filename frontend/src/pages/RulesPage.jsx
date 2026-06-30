@@ -23,7 +23,8 @@ function RulesPage({ rules, onRefresh, apiFetch }) {
     }
   };
 
-  const handleDelete = async (ruleId) => {
+  const handleDelete = async (ruleId, ruleName) => {
+    if (!window.confirm(`Delete rule "${ruleName}"? This cannot be undone.`)) return;
     try {
       await apiFetch(`/api/v1/rules/${ruleId}`, { method: 'DELETE' });
       onRefresh();
@@ -94,7 +95,7 @@ function RulesPage({ rules, onRefresh, apiFetch }) {
           <div key={rule.id} style={{ position: 'relative' }}>
             <RuleCard rule={rule} />
             <button className="btn" style={{ width: '100%', marginTop: '0.5rem', background: 'var(--danger)' }}
-              onClick={() => handleDelete(rule.id)}>Delete</button>
+              onClick={() => handleDelete(rule.id, rule.name)}>Delete</button>
           </div>
         ))}
       </div>

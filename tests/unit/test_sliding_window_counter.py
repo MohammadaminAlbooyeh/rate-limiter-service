@@ -33,7 +33,7 @@ async def test_sliding_window_counter_remaining():
 async def test_sliding_window_counter_reset_time():
     store = MemoryStore()
     algo = SlidingWindowCounterAlgorithm(store)
-    reset = await algo.get_reset_time("test:swc:4", 60)
+    reset = await algo.get_reset_time("test:swc:4", 5, 60)
     assert 0 < reset <= 60
 
 

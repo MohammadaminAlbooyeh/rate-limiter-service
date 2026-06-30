@@ -23,5 +23,5 @@ class SlidingWindowLogAlgorithm(BaseAlgorithm):
         count = await self.store.count_range_by_score(key, cutoff, now)
         return max(0, limit - count)
 
-    async def get_reset_time(self, key: str, window: int) -> int:
+    async def get_reset_time(self, key: str, limit: int, window: int) -> int:
         return window

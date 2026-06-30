@@ -20,3 +20,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+# Re-read env for tests that set DATABASE_URL after initial import
+def _reload_settings():
+    global settings
+    settings = Settings()

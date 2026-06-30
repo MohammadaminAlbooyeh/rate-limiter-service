@@ -32,10 +32,14 @@ function App() {
   const [blacklist, setBlacklist] = useState([]);
   const [adminKeyInput, setAdminKeyInput] = useState(getAdminKey());
   const [simResult, setSimResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const simFormDefaults = { ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET' };
   const [simForm, setSimForm] = useState(simFormDefaults);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
       const [statsRes, blockedRes, rulesRes, topRes, timelineRes, alertsRes, whitelistRes, blacklistRes] = await Promise.all([
         apiFetch('/api/v1/analytics/usage?identity=all'),
@@ -47,7 +51,7 @@ function App() {
         apiFetch('/api/v1/whitelist'),
         apiFetch('/api/v1/blacklist'),
       ]);
-      if (statsRes.ok) setStats(await statsRes.json());
+      if (statsRes.ok) setStats(await statsRes.json()); else setError('Failed to load stats');
       if (blockedRes.ok) setBlockedLogs(await blockedRes.json());
       if (rulesRes.ok) setRules(await rulesRes.json());
       if (topRes.ok) setTopConsumers(await topRes.json());
@@ -56,7 +60,10 @@ function App() {
       if (whitelistRes.ok) setWhitelist(await whitelistRes.json());
       if (blacklistRes.ok) setBlacklist(await blacklistRes.json());
     } catch (e) {
+      setError('Failed to connect to server');
       console.error('Failed to fetch dashboard data', e);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -158,7 +165,10 @@ function App() {
       </div>
 
       <div className="main-content">
-        {activeTab === 'dashboard' && (
+        {loading && <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>Loading...</div>}
+        {error && <div className="card" style={{ border: '1px solid var(--danger)', marginBottom: '1rem' }}><p style={{ color: 'var(--danger)' }}>{error}</p></div>}
+
+        {!loading && activeTab === 'dashboard' && (
           <DashboardPage
             stats={stats}
             blockedLogs={blockedLogs}
@@ -172,19 +182,19 @@ function App() {
           />
         )}
 
-        {activeTab === 'rules' && (
+        {!loading && activeTab === 'rules' && (
           <RulesPage rules={rules} onRefresh={fetchData} apiFetch={apiFetch} />
         )}
 
-        {activeTab === 'analytics' && (
+        {!loading && activeTab === 'analytics' && (
           <AnalyticsPage data={topConsumers} timeline={timeline} blockedLogs={blockedLogs} />
         )}
 
-        {activeTab === 'alerts' && (
+        {!loading && activeTab === 'alerts' && (
           <AlertsPage alerts={alerts} onRefresh={fetchData} />
         )}
 
-        {activeTab === 'lists' && (
+        {!loading && activeTab === 'lists' && (
           <div>
             <div className="header-container">
               <h1 className="header-title">Whitelist & Blacklist</h1>
@@ -247,7 +257,7 @@ function App() {
           </div>
         )}
 
-        {activeTab === 'settings' && (
+        {!loading && activeTab === 'settings' && (
           <SettingsPage
             adminKey={adminKeyInput}
             onAdminKeyChange={setAdminKeyInput}

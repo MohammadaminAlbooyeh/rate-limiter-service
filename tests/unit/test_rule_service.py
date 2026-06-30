@@ -1,14 +1,17 @@
 import pytest
+import sqlalchemy
 from backend.models.rule import Rule
-from backend.models.database import init_db, engine, Base
+from backend.models.database import engine, Base
+import backend.models.models
 
 
 @pytest.fixture(autouse=True)
-async def setup_db():
-    await init_db()
+def setup_db():
+    sync_engine = sqlalchemy.create_engine("sqlite:///./test_ratelimit.db")
+    Base.metadata.create_all(sync_engine)
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    Base.metadata.drop_all(sync_engine)
+    sync_engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -42,12 +45,12 @@ async def test_update_rule():
     service = RuleService()
     rule = Rule(name="original", identity="ip", algorithm="fixed_window", limit=10, window=60)
     created = await service.create_rule(rule)
-    updated = await service.update_rule(created.id, Rule(
-        name="updated", identity=created.identity, algorithm=created.algorithm,
-        limit=20, window=created.window, endpoint=created.endpoint))
+    updated = await service.update_rule(created.id, {"name": "updated", "limit": 20})
     assert updated is not None
     assert updated.name == "updated"
     assert updated.limit == 20
+    assert updated.identity == "ip"
+    assert updated.algorithm == "fixed_window"
 
 
 @pytest.mark.asyncio
@@ -59,5 +62,4 @@ async def test_delete_rule():
     deleted = await service.delete_rule(created.id)
     assert deleted is True
     assert await service.get_rule(created.id) is None
-    # Deleting again returns False
     assert await service.delete_rule(created.id) is False

@@ -1,13 +1,16 @@
 import pytest
-from backend.models.database import init_db, engine, Base
+from backend.models.database import engine, Base
+import backend.models.models
 
 
 @pytest.fixture(autouse=True)
-async def setup_db():
-    await init_db()
+def setup_db():
+    import sqlalchemy
+    sync_engine = sqlalchemy.create_engine("sqlite:///./test_ratelimit.db")
+    Base.metadata.create_all(sync_engine)
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    Base.metadata.drop_all(sync_engine)
+    sync_engine.dispose()
 
 
 @pytest.mark.asyncio

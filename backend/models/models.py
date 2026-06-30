@@ -55,6 +55,17 @@ class BlacklistDB(Base):
     reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class AlertDB(Base):
+    __tablename__ = "alerts"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    identity = Column(String, nullable=False, index=True)
+    current = Column(Integer, nullable=False)
+    limit = Column(Integer, nullable=False)
+    threshold = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class RequestLogDB(Base):
     __tablename__ = "request_logs"
 

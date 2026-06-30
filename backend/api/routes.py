@@ -167,8 +167,8 @@ async def usage_stats(identity: str = ""):
 
 
 @router.get("/analytics/blocked", dependencies=[Depends(require_admin_key)])
-async def blocked_requests():
-    return await analytics_service.get_blocked()
+async def blocked_requests(limit: int = 100, offset: int = 0):
+    return await analytics_service.get_blocked(limit, offset)
 
 
 @router.get("/analytics/top", dependencies=[Depends(require_admin_key)])

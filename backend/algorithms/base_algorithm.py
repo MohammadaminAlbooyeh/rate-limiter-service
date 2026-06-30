@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 
 
 class BaseAlgorithm(ABC):
@@ -12,5 +11,5 @@ class BaseAlgorithm(ABC):
         ...
 
     @abstractmethod
-    async def get_reset_time(self, key: str, window: int) -> int:
+    async def get_reset_time(self, key: str, limit: int, window: int) -> int:
         ...

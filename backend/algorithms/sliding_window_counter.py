@@ -40,7 +40,7 @@ class SlidingWindowCounterAlgorithm(BaseAlgorithm):
 
         return max(0, limit - int(estimate))
 
-    async def get_reset_time(self, key: str, window: int) -> int:
+    async def get_reset_time(self, key: str, limit: int, window: int) -> int:
         now = time.time()
         current_window = math.floor(now / window)
         return int(((current_window + 1) * window) - now)
