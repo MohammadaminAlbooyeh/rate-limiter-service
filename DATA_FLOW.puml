@@ -1,0 +1,107 @@
+@startuml Rate Limit Check Data Flow
+
+participant "Client App" as client
+participant "FastAPI API" as api
+participant "Middleware" as middleware
+participant "WhitelistService" as whitelist
+participant "RuleService" as rules
+participant "LimiterService" as limiter
+participant "Algorithm" as algo
+participant "Redis Store" as redis
+participant "PostgreSQL" as db
+
+client ->> api: POST /api/v1/check\n{ip, api_key, endpoint, method}
+activate api
+
+api ->> middleware: Authenticate request
+activate middleware
+middleware ->> middleware: Validate admin key (if needed)
+middleware ->> api: OK
+deactivate middleware
+
+api ->> whitelist: is_whitelisted(identifier)?
+activate whitelist
+whitelist ->> redis: GET whitelist:{id}
+redis ->> whitelist: Found/Not Found
+whitelist ->> api: true/false
+deactivate whitelist
+
+alt Whitelisted
+  api ->> client: 200 OK\n{allowed: true, remaining: ∞}
+  deactivate api
+else Not Whitelisted
+  api ->> whitelist: is_blacklisted(identifier)?
+  activate whitelist
+  whitelist ->> redis: GET blacklist:{id}
+  redis ->> whitelist: Found/Not Found
+  whitelist ->> api: true/false
+  deactivate whitelist
+
+  alt Blacklisted
+    api ->> client: 403 Forbidden
+    deactivate api
+  else Not Blacklisted
+    api ->> rules: get_rules()
+    activate rules
+    rules ->> db: SELECT * FROM rules WHERE enabled=true
+    db ->> rules: Return rules
+    rules ->> api: [Rule1, Rule2, ...]
+    deactivate rules
+
+    api ->> limiter: check(identity, rule)
+    activate limiter
+
+    loop For each matching rule
+      limiter ->> algo: check(identity_key, capacity, window_size)
+      activate algo
+
+      algo ->> redis: Get current state\n(GET/ZRANGE/HGET)
+      activate redis
+      redis ->> algo: State data (counters, timestamps, etc)
+      deactivate redis
+
+      algo ->> algo: Apply algorithm logic\nUpdate state\nCalculate remaining, reset_time
+
+      algo ->> redis: Update state\n(INCR/ZADD/HSET/EXPIRE)
+      activate redis
+      redis ->> algo: OK
+      deactivate redis
+
+      algo ->> algo: Determine: allowed = (current < limit)
+
+      alt Limit NOT exceeded
+        algo ->> limiter: (true, remaining, reset)
+        limiter ->> limiter: Continue to next rule
+      else Limit exceeded
+        algo ->> limiter: (false, 0, reset)
+        limiter ->> limiter: Stop processing, reject
+      end
+      deactivate algo
+    end
+
+    alt All rules passed
+      limiter ->> db: INSERT INTO events\n(type='check', status='allowed')
+      activate db
+      db ->> limiter: OK
+      deactivate db
+      limiter ->> api: (true, remaining, reset)
+    else Any rule failed
+      limiter ->> db: INSERT INTO events\n(type='check', status='limited')
+      activate db
+      db ->> limiter: OK
+      deactivate db
+      limiter ->> api: (false, 0, reset)
+    end
+    deactivate limiter
+
+    alt Allowed
+      api ->> client: 200 OK\n{allowed: true, remaining: X, reset: T}
+      deactivate api
+    else Rate limited
+      api ->> client: 429 Too Many Requests\n{detail: "Rate limit exceeded"}
+      deactivate api
+    end
+  end
+end
+
+@enduml

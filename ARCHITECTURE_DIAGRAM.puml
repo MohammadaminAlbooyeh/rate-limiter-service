@@ -1,0 +1,119 @@
+@startuml Rate Limiter Service Architecture
+
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!include AWSPUML/ApplicationIntegration/APIGateway.puml
+!include AWSPUML/Database/RDS.puml
+!include AWSPUML/Database/ElastiCache.puml
+
+skinparam linetype ortho
+skinparam backgroundColor #f5f5f5
+
+package "Client Layer" {
+  actor "REST Clients" as clients
+  actor "Dashboard" as dashboard
+}
+
+package "Presentation Layer" {
+  component "FastAPI Server\n(:8000)" as api
+
+  package "Routes" {
+    component "Check\n/api/v1/check" as check_route
+    component "Rules\n/api/v1/rules" as rules_route
+    component "Analytics\n/api/v1/analytics" as analytics_route
+    component "Whitelist/Blacklist\n/api/v1/lists/*" as lists_route
+    component "Simulation\n/api/v1/simulate" as simulate_route
+    component "WebSocket\n/ws" as ws_route
+  }
+
+  package "Middleware" {
+    component "Auth" as auth_mw
+    component "CORS" as cors_mw
+    component "Logging" as log_mw
+  }
+}
+
+package "Application Layer" {
+  component "LimiterService" as limiter_svc
+  component "RuleService" as rule_svc
+  component "AnalyticsService" as analytics_svc
+  component "AlertService" as alert_svc
+  component "WhitelistService" as whitelist_svc
+}
+
+package "Algorithm Layer" {
+  component "FixedWindow" as fixed_window
+  component "SlidingWindowLog" as sliding_log
+  component "SlidingWindowCounter" as sliding_counter
+  component "TokenBucket" as token_bucket
+  component "LeakyBucket" as leaky_bucket
+  component "BaseAlgorithm\n(Interface)" as base_algo
+}
+
+package "Storage Layer" {
+  database "Redis\n(State)" as redis
+  database "PostgreSQL\n(Config & Audit)" as postgres
+  component "MemoryStore\n(Dev/Test)" as memory_store
+}
+
+package "External Systems" {
+  component "Monitoring\n(Prometheus)" as prometheus
+  component "Logging\n(ELK/Datadog)" as logging
+}
+
+' Client connections
+clients --> api
+dashboard --> ws_route
+
+' API routing
+api --> auth_mw
+api --> cors_mw
+api --> log_mw
+
+auth_mw --> check_route
+cors_mw --> rules_route
+log_mw --> analytics_route
+auth_mw --> lists_route
+auth_mw --> simulate_route
+api --> ws_route
+
+' Routes to services
+check_route --> limiter_svc
+rules_route --> rule_svc
+analytics_route --> analytics_svc
+lists_route --> whitelist_svc
+simulate_route --> limiter_svc
+ws_route --> analytics_svc
+
+' Services to algorithms
+limiter_svc --> base_algo
+base_algo --> fixed_window
+base_algo --> sliding_log
+base_algo --> sliding_counter
+base_algo --> token_bucket
+base_algo --> leaky_bucket
+
+' Algorithms to storage
+fixed_window --> redis
+sliding_log --> redis
+sliding_counter --> redis
+token_bucket --> redis
+leaky_bucket --> redis
+
+fixed_window --> memory_store
+sliding_log --> memory_store
+sliding_counter --> memory_store
+token_bucket --> memory_store
+leaky_bucket --> memory_store
+
+' Services to database
+rule_svc --> postgres
+analytics_svc --> postgres
+alert_svc --> postgres
+whitelist_svc --> postgres
+
+' Observability
+limiter_svc --> prometheus
+analytics_svc --> prometheus
+limiter_svc --> logging
+
+@enduml
