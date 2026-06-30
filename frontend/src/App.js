@@ -34,7 +34,7 @@ function App() {
   const [simResult, setSimResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const simFormDefaults = { ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET' };
+  const simFormDefaults = { ip: '192.168.1.1', api_key: '', user_id: '', endpoint: '/home', method: 'GET', algorithm: 'fixed_window', limit: 10, window: 60 };
   const [simForm, setSimForm] = useState(simFormDefaults);
 
   const fetchData = useCallback(async () => {
@@ -105,19 +105,36 @@ function App() {
   const handleSimulateRequest = async (e) => {
     e.preventDefault();
     try {
-      const res = await apiFetch('/api/v1/check', {
+      // Use the isolated /simulate endpoint (does not affect live rate limit state)
+      const simRule = {
+        name: 'Simulated Rule',
+        identity: 'ip',
+        algorithm: simForm.algorithm || 'fixed_window',
+        limit: parseInt(simForm.limit) || 10,
+        window: parseInt(simForm.window) || 60,
+        endpoint: '*',
+      };
+      const body = {
+        ip: simForm.ip,
+        api_key: simForm.api_key,
+        user_id: simForm.user_id,
+        endpoint: simForm.endpoint,
+        method: simForm.method,
+        rule: simRule,
+      };
+      const res = await apiFetch('/api/v1/simulate', {
         method: 'POST',
-        body: JSON.stringify(simForm),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       setSimResult({
         status: res.status,
-        allowed: res.status !== 429 && res.status !== 403,
-        detail: data.detail || 'Success',
-        limit: res.headers.get('X-RateLimit-Limit'),
-        remaining: res.headers.get('X-RateLimit-Remaining'),
-        reset: res.headers.get('X-RateLimit-Reset'),
-        algorithm: res.headers.get('X-RateLimit-Algorithm'),
+        allowed: data.allowed,
+        detail: data.allowed ? 'Request allowed' : 'Rate limit exceeded',
+        limit: simRule.limit,
+        remaining: data.remaining,
+        reset: data.reset,
+        algorithm: simRule.algorithm,
       });
     } catch (err) {
       console.error(err);

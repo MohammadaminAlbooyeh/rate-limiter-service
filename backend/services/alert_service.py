@@ -19,14 +19,15 @@ class AlertService:
             return True
         return False
 
-    async def get_alerts(self) -> List[Dict]:
+    async def get_alerts(self, limit: int = 100, offset: int = 0) -> List[Dict]:
         async with async_session() as session:
             result = await session.execute(
-                select(AlertDB).order_by(AlertDB.created_at.desc()).limit(100)
+                select(AlertDB).order_by(AlertDB.created_at.desc()).offset(offset).limit(limit)
             )
             rows = result.scalars().all()
             return [
                 {
+                    "id": r.id,
                     "identity": r.identity,
                     "current": r.current,
                     "limit": r.limit,

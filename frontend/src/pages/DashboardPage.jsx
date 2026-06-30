@@ -57,7 +57,7 @@ function DashboardPage({ stats, blockedLogs, topConsumers, timeline, simForm, si
               <input className="form-control" type="text" value={simForm.endpoint}
                 onChange={e => onSimFormChange({ ...simForm, endpoint: e.target.value })} required />
             </div>
-            <div className="form-group" style={{ margin: 0 }}>
+            <div className="form-group">
               <label className="form-label">HTTP Method</label>
               <select className="form-control" value={simForm.method}
                 onChange={e => onSimFormChange({ ...simForm, method: e.target.value })}>
@@ -66,7 +66,28 @@ function DashboardPage({ stats, blockedLogs, topConsumers, timeline, simForm, si
                 <option value="DELETE">DELETE</option>
               </select>
             </div>
-            <button className="btn" type="submit">Send Test Request</button>
+            <div className="form-group">
+              <label className="form-label">Algorithm</label>
+              <select className="form-control" value={simForm.algorithm}
+                onChange={e => onSimFormChange({ ...simForm, algorithm: e.target.value })}>
+                <option value="fixed_window">Fixed Window</option>
+                <option value="sliding_window_log">Sliding Window Log</option>
+                <option value="sliding_window_counter">Sliding Window Counter</option>
+                <option value="token_bucket">Token Bucket</option>
+                <option value="leaky_bucket">Leaky Bucket</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Limit (requests)</label>
+              <input className="form-control" type="number" value={simForm.limit}
+                onChange={e => onSimFormChange({ ...simForm, limit: e.target.value })} min="1" required />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Window (seconds)</label>
+              <input className="form-control" type="number" value={simForm.window}
+                onChange={e => onSimFormChange({ ...simForm, window: e.target.value })} min="1" required />
+            </div>
+            <button className="btn" type="submit" style={{ marginTop: '1rem' }}>Simulate Test Request</button>
           </form>
 
           {simResult && (

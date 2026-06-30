@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     redis_password: str = ""
     database_url: str = "sqlite+aiosqlite:///./ratelimiter.db"
     log_level: str = "INFO"
+    log_format: str = "text"  # "text" or "json"
     use_redis: bool = True
     use_redis_cluster: bool = False
     redis_cluster_nodes: str = ""

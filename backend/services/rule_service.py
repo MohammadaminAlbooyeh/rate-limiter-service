@@ -45,7 +45,9 @@ class RuleService:
             result = await session.execute(select(RuleDB).where(RuleDB.id == rule_id))
             rule_db = result.scalar_one_or_none()
             if rule_db:
-                for field in ["name", "identity", "algorithm", "limit", "window", "endpoint", "tier"]:
+                # Only allow updating fields that are present in RuleUpdate schema
+                # (identity and algorithm are not updatable after creation)
+                for field in ["name", "limit", "window", "endpoint", "tier"]:
                     if field in updates:
                         setattr(rule_db, field, updates[field])
                 await session.commit()

@@ -14,8 +14,36 @@ logger = logging.getLogger("ratelimiter.main")
 limiter = LimiterService()
 
 
+def _validate_config():
+    """Validate critical configuration at startup."""
+    errors = []
+    if settings.use_redis:
+        if not settings.redis_host:
+            errors.append("REDIS_HOST is required when USE_REDIS=true")
+        if settings.redis_port <= 0 or settings.redis_port > 65535:
+            errors.append(f"Invalid REDIS_PORT: {settings.redis_port}")
+    if settings.use_redis_cluster:
+        if not settings.redis_cluster_nodes:
+            errors.append("REDIS_CLUSTER_NODES is required when USE_REDIS_CLUSTER=true")
+        else:
+            for node in settings.redis_cluster_nodes.split(","):
+                node = node.strip()
+                if ":" not in node:
+                    errors.append(f"Invalid Redis cluster node format: '{node}'. Expected 'host:port'")
+    if not settings.database_url:
+        errors.append("DATABASE_URL is required")
+    if settings.log_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        errors.append(f"Invalid LOG_LEVEL: {settings.log_level}")
+    if errors:
+        for err in errors:
+            logger.error(f"Configuration error: {err}")
+        raise SystemExit(1)
+    logger.info("Configuration validated successfully")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _validate_config()
     await init_db()
     yield
     try:

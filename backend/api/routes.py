@@ -11,6 +11,7 @@ from backend.services.rule_service import RuleService
 from backend.services.whitelist_service import WhitelistService
 from backend.services.analytics_service import AnalyticsService
 from backend.services.alert_service import AlertService
+from backend.middleware.admin_rate_limit import admin_rate_limit_dependency
 
 router = APIRouter(prefix="/api/v1")
 
@@ -101,12 +102,17 @@ async def list_rules():
     return await rule_service.get_rules()
 
 
-@router.post("/rules", response_model=RuleResponse, dependencies=[Depends(require_admin_key)])
+@router.post("/rules", response_model=RuleResponse, dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def create_rule(rule: RuleCreate):
-    return await rule_service.create_rule(rule.to_model())
+    from backend.rules.rule_validator import RuleValidator
+    validator = RuleValidator()
+    model = rule.to_model()
+    if not validator.validate(model):
+        raise HTTPException(status_code=400, detail="Invalid rule: check algorithm, identity type, limit, or window")
+    return await rule_service.create_rule(model)
 
 
-@router.put("/rules/{rule_id}", response_model=RuleResponse, dependencies=[Depends(require_admin_key)])
+@router.put("/rules/{rule_id}", response_model=RuleResponse, dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def update_rule(rule_id: str, rule: RuleUpdate):
     updates = rule.model_dump(exclude_unset=True)
     updated = await rule_service.update_rule(rule_id, updates)
@@ -115,7 +121,7 @@ async def update_rule(rule_id: str, rule: RuleUpdate):
     return updated
 
 
-@router.delete("/rules/{rule_id}", dependencies=[Depends(require_admin_key)])
+@router.delete("/rules/{rule_id}", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def delete_rule(rule_id: str):
     deleted = await rule_service.delete_rule(rule_id)
     if not deleted:
@@ -123,29 +129,29 @@ async def delete_rule(rule_id: str):
     return {"deleted": True}
 
 
-@router.get("/whitelist", dependencies=[Depends(require_admin_key)])
+@router.get("/whitelist", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def list_whitelist():
     return await whitelist_service.get_all_whitelist()
 
 
-@router.get("/blacklist", dependencies=[Depends(require_admin_key)])
+@router.get("/blacklist", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def list_blacklist():
     return await whitelist_service.get_all_blacklist()
 
 
-@router.post("/whitelist", dependencies=[Depends(require_admin_key)])
+@router.post("/whitelist", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def add_whitelist(req: WhitelistRequest):
     await whitelist_service.add_whitelist(req.identity, req.reason)
     return {"added": True}
 
 
-@router.post("/blacklist", dependencies=[Depends(require_admin_key)])
+@router.post("/blacklist", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def add_blacklist(req: BlacklistRequest):
     await whitelist_service.add_blacklist(req.identity, req.reason)
     return {"added": True}
 
 
-@router.delete("/whitelist/{identity}", dependencies=[Depends(require_admin_key)])
+@router.delete("/whitelist/{identity}", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def remove_whitelist(identity: str):
     removed = await whitelist_service.remove_whitelist(identity)
     if not removed:
@@ -153,7 +159,7 @@ async def remove_whitelist(identity: str):
     return {"removed": True}
 
 
-@router.delete("/blacklist/{identity}", dependencies=[Depends(require_admin_key)])
+@router.delete("/blacklist/{identity}", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def remove_blacklist(identity: str):
     removed = await whitelist_service.remove_blacklist(identity)
     if not removed:
@@ -161,29 +167,29 @@ async def remove_blacklist(identity: str):
     return {"removed": True}
 
 
-@router.get("/analytics/usage", dependencies=[Depends(require_admin_key)])
+@router.get("/analytics/usage", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def usage_stats(identity: str = ""):
     return await analytics_service.get_usage(identity)
 
 
-@router.get("/analytics/blocked", dependencies=[Depends(require_admin_key)])
+@router.get("/analytics/blocked", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def blocked_requests(limit: int = 100, offset: int = 0):
     return await analytics_service.get_blocked(limit, offset)
 
 
-@router.get("/analytics/top", dependencies=[Depends(require_admin_key)])
+@router.get("/analytics/top", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def top_consumers(limit: int = 10):
     return await analytics_service.get_top_consumers(limit)
 
 
-@router.get("/analytics/timeline", dependencies=[Depends(require_admin_key)])
+@router.get("/analytics/timeline", dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
 async def usage_timeline(minutes: int = 30):
     return await analytics_service.get_timeline(minutes)
 
 
-@router.get("/alerts", response_model=list[AlertResponse], dependencies=[Depends(require_admin_key)])
-async def get_alerts():
-    return await alert_service.get_alerts()
+@router.get("/alerts", response_model=list[AlertResponse], dependencies=[Depends(require_admin_key), Depends(admin_rate_limit_dependency)])
+async def get_alerts(limit: int = 100, offset: int = 0):
+    return await alert_service.get_alerts(limit=limit, offset=offset)
 
 
 @router.get("/metrics")
